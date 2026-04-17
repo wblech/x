@@ -555,8 +555,13 @@ func (e *Emulator) registerDefaultCsiHandlers() {
 			rect := uv.Rect(0, 0, width, y+1)
 			e.scr.FillArea(e.scr.blankCell(), rect)
 		case 2: // erase screen
-			// Save screen content to scrollback before clearing
-			e.scr.ClearWithScrollback()
+			if e.ed2SavesScrollback {
+				// Save screen content to scrollback before clearing (VTE behavior).
+				e.scr.ClearWithScrollback()
+			} else {
+				// Clear viewport only, no scrollback push (xterm/Ghostty behavior).
+				e.scr.Clear()
+			}
 		case 3: // erase display (including scrollback in some terminals)
 			// For ED 3, we clear the screen but also clear scrollback
 			// This matches xterm behavior where ESC[3J clears scrollback

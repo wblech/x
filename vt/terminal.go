@@ -51,6 +51,7 @@ type Terminal interface {
 	SetDefaultForegroundColor(c color.Color)
 	SetForegroundColor(c color.Color)
 	SetIndexedColor(i int, c color.Color)
+	SetED2SavesScrollback(v bool)
 	SetLogger(l Logger)
 	SetScrollbackSize(maxLines int)
 	String() string

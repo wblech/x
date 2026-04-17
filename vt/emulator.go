@@ -73,6 +73,12 @@ type Emulator struct {
 	// atPhantom indicates if the cursor is out of bounds.
 	// When true, and a character is written, the cursor is moved to the next line.
 	atPhantom bool
+
+	// ed2SavesScrollback controls whether ED 2 (Erase Display) pushes
+	// the current viewport into scrollback before clearing.
+	// When true (default), it matches VTE/GNOME Terminal behavior.
+	// When false, it matches xterm/Ghostty behavior (clear only).
+	ed2SavesScrollback bool
 }
 
 var _ Terminal = (*Emulator)(nil)
@@ -80,6 +86,7 @@ var _ Terminal = (*Emulator)(nil)
 // NewEmulator creates a new virtual terminal emulator.
 func NewEmulator(w, h int) *Emulator {
 	t := new(Emulator)
+	t.ed2SavesScrollback = true // VTE-compatible default
 	t.scrs[0] = *NewScreen(w, h)
 	t.scrs[1] = *NewScreen(w, h)
 	t.scr = &t.scrs[0]
@@ -476,6 +483,15 @@ func (e *Emulator) ScrollbackCellAt(x, y int) *uv.Cell {
 // SetScrollbackSize sets the maximum number of lines in the scrollback buffer.
 func (e *Emulator) SetScrollbackSize(maxLines int) {
 	e.scrs[0].SetScrollbackSize(maxLines)
+}
+
+// SetED2SavesScrollback controls whether ED 2 (Erase Display) pushes
+// the current viewport into scrollback before clearing. When true
+// (the default), the behavior matches VTE and GNOME Terminal. When false,
+// it matches xterm and Ghostty, which only clear the viewport without
+// saving its contents to scrollback.
+func (e *Emulator) SetED2SavesScrollback(v bool) {
+	e.ed2SavesScrollback = v
 }
 
 // ClearScrollback clears the scrollback buffer.

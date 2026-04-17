@@ -180,6 +180,45 @@ func TestScrollback(t *testing.T) {
 		t.Logf("scrollback after ED 2: %d lines", newLen)
 	})
 
+	t.Run("ED 2 does not save to scrollback when disabled", func(t *testing.T) {
+		e := NewEmulator(20, 5)
+		e.SetED2SavesScrollback(false)
+
+		// Write some content (not enough to scroll)
+		e.WriteString("line 1\r\n")
+		e.WriteString("line 2\r\n")
+		e.WriteString("line 3\r\n")
+
+		initialLen := e.ScrollbackLen()
+
+		// Clear screen with ED 2 (ESC[2J)
+		e.WriteString("\x1b[2J")
+
+		// Scrollback must NOT grow — xterm/Ghostty behavior
+		newLen := e.ScrollbackLen()
+		if newLen != initialLen {
+			t.Errorf("expected scrollback unchanged after ED 2 with saves disabled, was %d now %d",
+				initialLen, newLen)
+		}
+	})
+
+	t.Run("ED 2 still clears viewport when saves disabled", func(t *testing.T) {
+		e := NewEmulator(20, 5)
+		e.SetED2SavesScrollback(false)
+
+		e.WriteString("visible content\r\n")
+		e.WriteString("\x1b[2J")
+
+		// Viewport should be cleared
+		render := e.Render()
+		for _, r := range render {
+			if r != '\n' && r != ' ' && r != '\x00' {
+				t.Errorf("expected cleared viewport, but found content: %q", render)
+				break
+			}
+		}
+	})
+
 	t.Run("ED 3 clears scrollback", func(t *testing.T) {
 		e := NewEmulator(20, 5)
 
