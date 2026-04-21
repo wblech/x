@@ -223,6 +223,11 @@ func (s *Screen) SaveCursor() {
 	s.saved = s.cur
 }
 
+// SavedCursor returns the saved cursor.
+func (s *Screen) SavedCursor() Cursor {
+	return s.saved
+}
+
 // RestoreCursor restores the cursor.
 func (s *Screen) RestoreCursor() {
 	old := s.cur.Position

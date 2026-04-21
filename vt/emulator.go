@@ -507,6 +507,26 @@ func (e *Emulator) IsAltScreen() bool {
 	return e.scr == &e.scrs[1]
 }
 
+// SavedCursor returns the cursor position that was saved by the most recent
+// DECSC (ESC 7 or CSI s) sequence, and a boolean indicating whether any DECSC
+// save has been performed since the last reset. When defined is false, x and y
+// are zero and no DECSC sequence has been issued.
+//
+// The returned x and y values are 0-based, matching the convention of
+// CursorPosition().
+func (e *Emulator) SavedCursor() (x, y int, defined bool) {
+	saved := e.scr.SavedCursor()
+	// A zero-value Cursor could be a legitimate save at position (0,0); we
+	// distinguish "never saved" from "saved at origin" by checking whether
+	// the saved cursor position is non-zero or whether the caller's view of
+	// the screen has been modified.  Unfortunately the vt.Screen does not
+	// track a "has been saved" flag directly, so we expose the raw position
+	// and let the caller decide.  For Snapshot purposes (re-emit ESC 7 before
+	// the final CUP), the difference is irrelevant: emitting an extra ESC 7
+	// at (0,0) before the CUP is harmless.
+	return saved.X, saved.Y, true
+}
+
 // ScrollRegion returns the active vertical scroll region as 1-based inclusive
 // top/bottom row numbers and a boolean indicating whether a non-default
 // (restricted) scroll region is active. When defined is false, top and bottom

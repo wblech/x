@@ -144,7 +144,7 @@ func (s *Scrollback) acquireLine(size int, recycled uv.Line) uv.Line {
 		s.releaseLine(recycled)
 	}
 	if v := s.linePool.Get(); v != nil {
-		pooled := v.(uv.Line)
+		pooled := *v.(*uv.Line)
 		if cap(pooled) >= size {
 			return pooled[:size]
 		}
@@ -157,7 +157,8 @@ func (s *Scrollback) releaseLine(line uv.Line) {
 	if cap(line) == 0 {
 		return
 	}
-	s.linePool.Put(line[:0])
+	trimmed := line[:0]
+	s.linePool.Put(&trimmed)
 }
 
 // CellAt returns the cell at the given position in the scrollback buffer.
