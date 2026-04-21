@@ -68,6 +68,35 @@ func TestDcsSequence(t *testing.T) {
 				Cmd('\\'),
 			},
 		},
+		{
+			// DCS payload carries a UTF-8 Dingbat (E2 9C B3 = U+2733 ✳).
+			// The 0x9C inside it must NOT terminate the passthrough; ESC\\ does.
+			// Regression for watchtower Problem 5 class of bug in DCS.
+			name:  "dcs_payload_with_dingbat_utf8",
+			input: "\x1bPq\xe2\x9c\xb3 data\x1b\\",
+			expected: []any{
+				dcsSequence{
+					Cmd:    'q',
+					Params: Params{},
+					Data:   []byte("\xe2\x9c\xb3 data"),
+				},
+				Cmd('\\'),
+			},
+		},
+		{
+			// Bare 0x9C (ST in C1) still terminates DCS when not in a UTF-8 sequence.
+			// Regression for the 7-bit / non-UTF-8 path.
+			name:  "dcs_bare_9c_terminates",
+			input: "\x1bPqhello\x9cZ",
+			expected: []any{
+				dcsSequence{
+					Cmd:    'q',
+					Params: Params{},
+					Data:   []byte("hello"),
+				},
+				'Z',
+			},
+		},
 	}
 
 	for _, c := range cases {

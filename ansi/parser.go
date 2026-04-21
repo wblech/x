@@ -50,6 +50,16 @@ type Parser struct {
 
 	// state is the current state of the parser.
 	state byte
+
+	// stringUtf8Remaining tracks the number of UTF-8 continuation bytes
+	// still expected inside a byte-collecting string state (OSC, DCS,
+	// SOS, PM, APC). When > 0, any byte in 0x80-0xBF must be appended to
+	// the payload rather than trigger a state transition — otherwise
+	// UTF-8 codepoints whose continuation bytes overlap the C1 control
+	// range (e.g. 0x9C = ST, present in U+2700-U+273F Dingbats encoded
+	// as E2 9C XX) would truncate the string prematurely. Matches
+	// xterm.js semantics without changing x/ansi's byte-oriented model.
+	stringUtf8Remaining int
 }
 
 // NewParser returns a new parser with the default settings.
@@ -135,6 +145,7 @@ func (p *Parser) clear() {
 	}
 	p.paramsLen = 0
 	p.cmd = 0
+	p.stringUtf8Remaining = 0
 }
 
 // State returns the current state of the parser.
@@ -204,6 +215,20 @@ func (p *Parser) advanceUtf8(b byte) parser.Action {
 }
 
 func (p *Parser) advance(b byte) parser.Action {
+	// UTF-8 override for byte-collecting string states: if we are currently
+	// mid-way through a multi-byte UTF-8 codepoint inside one of the
+	// string states, a continuation byte (0x80-0xBF) must be appended to
+	// the payload rather than trigger a state transition. Without this
+	// guard, continuation bytes that overlap C1 controls (notably 0x9C
+	// = ST) falsely terminate the string — the root cause of watchtower
+	// Problem 5, where Claude Code emits OSC titles carrying U+2733 ✳
+	// (encoded E2 9C B3).
+	if isStringState(p.state) && p.stringUtf8Remaining > 0 && b >= 0x80 && b <= 0xBF {
+		p.stringUtf8Remaining--
+		p.performAction(parser.PutAction, p.state, b)
+		return parser.PutAction
+	}
+
 	state, action := parser.Table.Transition(p.state, b)
 
 	// We need to clear the parser state if the state changes from EscapeState.
@@ -233,6 +258,15 @@ func (p *Parser) advance(b byte) parser.Action {
 	default:
 		p.performAction(action, state, b)
 	}
+
+	// When a multi-byte UTF-8 start byte is put into a string state,
+	// arm stringUtf8Remaining with the count of continuation bytes to
+	// expect. Reset the counter whenever we leave a string state, or
+	// when any byte outside 0x80-0xBF arrives while inside one (whether
+	// the action is PutAction or IgnoreAction) — a non-continuation byte
+	// invalidates the in-progress UTF-8 sequence, so later bytes must
+	// not be shielded from state-machine transitions.
+	p.stringUtf8Remaining = p.nextUtf8Remaining(state, action, b)
 
 	p.state = state
 
@@ -414,4 +448,45 @@ func utf8ByteLen(b byte) int {
 		return 4
 	}
 	return -1
+}
+
+// isStringState reports whether s is one of the byte-collecting string
+// states whose payload can legitimately carry UTF-8 multi-byte
+// sequences. See stringUtf8Remaining for why this is needed.
+func isStringState(s byte) bool {
+	return s == parser.OscStringState ||
+		s == parser.DcsStringState ||
+		s == parser.SosStringState ||
+		s == parser.PmStringState ||
+		s == parser.ApcStringState
+}
+
+// nextUtf8Remaining computes the updated stringUtf8Remaining value after
+// processing byte b with the given action in the given next state.
+//
+// Rules:
+//   - If next state is not a string state → reset to 0.
+//   - If action is PutAction and b is a multi-byte UTF-8 lead → arm counter.
+//   - If b is outside 0x80-0xBF (non-continuation) → reset to 0. This covers
+//     both PutAction with an ASCII/lead byte and IgnoreAction with any
+//     non-continuation byte, ensuring a corrupt sequence never silently shields
+//     the following 0x9C (ST) from its terminating role.
+//   - Otherwise (PutAction with a continuation byte 0x80-0xBF) → return
+//     current counter unchanged (the caller's guard already decremented it).
+func (p *Parser) nextUtf8Remaining(state parser.State, action parser.Action, b byte) int {
+	if !isStringState(state) {
+		return 0
+	}
+	if b < 0x80 || b > 0xBF {
+		// Non-continuation byte: either a new lead (arm) or plain ASCII/ignore (reset).
+		if action == parser.PutAction {
+			if n := utf8ByteLen(b); n > 1 {
+				return n - 1
+			}
+		}
+		return 0
+	}
+	// Continuation byte 0x80-0xBF in a string state: counter was already
+	// decremented by the early-return guard in advance(); leave it as-is.
+	return p.stringUtf8Remaining
 }
