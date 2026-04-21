@@ -425,7 +425,7 @@ func (e *Emulator) IndexedColor(i int) color.Color {
 	c := e.colors[i]
 	if c == nil {
 		// Return the default color.
-		return ansi.IndexedColor(i) //nolint:gosec
+		return ansi.IndexedColor(i)
 	}
 
 	return c
@@ -505,4 +505,25 @@ func (e *Emulator) ClearScrollback() {
 // IsAltScreen returns whether the terminal is in alternate screen mode.
 func (e *Emulator) IsAltScreen() bool {
 	return e.scr == &e.scrs[1]
+}
+
+// ScrollRegion returns the active vertical scroll region as 1-based inclusive
+// top/bottom row numbers and a boolean indicating whether a non-default
+// (restricted) scroll region is active. When defined is false, top and bottom
+// equal 1 and Height() respectively — the full screen.
+//
+// The returned values map directly to the DECSTBM sequence parameters:
+//
+//	ESC [ <top> ; <bottom> r
+func (e *Emulator) ScrollRegion() (top, bottom int, defined bool) {
+	r := e.scr.ScrollRegion()
+	// Internal representation: Min.Y is 0-based inclusive top,
+	// Max.Y is 0-based exclusive bottom. Convert to 1-based inclusive.
+	t := r.Min.Y + 1
+	b := r.Max.Y
+	h := e.Height()
+	if t == 1 && b == h {
+		return t, b, false
+	}
+	return t, b, true
 }
