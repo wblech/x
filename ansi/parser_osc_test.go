@@ -111,6 +111,21 @@ func TestOscSequence(t *testing.T) {
 			},
 		},
 		{
+			// 8-bit OSC introducer (0x9D) in place of ESC ]. The introducer
+			// itself falls inside the 0x80-0xBF continuation range, which
+			// exercises the nextUtf8Remaining branch that returns the
+			// current counter unchanged for a continuation byte arriving as
+			// the STATE-TRANSITION byte (rather than via the advance() early
+			// return). Payload contains U+2733 ✳ (E2 9C B3) so that 0x9C is
+			// also present as a UTF-8 continuation byte and must not
+			// terminate the string. Terminated by BEL.
+			name:  "osc_8bit_introducer_with_dingbat",
+			input: "\x9d0;\xe2\x9c\xb3\x07",
+			expected: []any{
+				[]byte("0;\xe2\x9c\xb3"),
+			},
+		},
+		{
 			name:  "exceed_max_buffer_size",
 			input: fmt.Sprintf("\x1b]52;s%s\x07", strings.Repeat("a", maxBufferSize)),
 			expected: []any{
